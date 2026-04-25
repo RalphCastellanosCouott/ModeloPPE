@@ -1,11 +1,12 @@
 import streamlit as st
-from ultralytics import YOLO
-import cv2
 import numpy as np
 from PIL import Image
 import pandas as pd
-import requests
+from ultralytics import YOLO
+import cv2  # ← AÑADIR ESTA LÍNEA
+import os
 from io import BytesIO
+import requests
 
 # Configuración de la página
 st.set_page_config(
@@ -69,6 +70,7 @@ st.markdown("""
         padding: 0.5rem 2rem;
         font-weight: bold;
         transition: all 0.3s;
+        width: 100%;
     }
     
     .stButton > button:hover {
@@ -78,32 +80,10 @@ st.markdown("""
     
     /* Contenedores de opciones */
     .option-container {
-        background: rgba(255,255,255,0.85);
+        background: rgba(255,255,255,0.7);
         padding: 1rem;
         border-radius: 10px;
         margin: 1rem 0;
-    }
-    
-    /* Sidebar con fondo oscuro y texto blanco */
-    [data-testid="stSidebar"] {
-        background: linear-gradient(135deg, #0D47A1 0%, #1565C0 100%);
-    }
-    
-    [data-testid="stSidebar"] * {
-        color: white !important;
-    }
-    
-    [data-testid="stSidebar"] .stAlert {
-        background-color: rgba(255,255,255,0.2);
-    }
-    
-    [data-testid="stSidebar"] .stAlert * {
-        color: white !important;
-    }
-    
-    /* Tabla con texto negro */
-    .stDataFrame, .dataframe {
-        color: #000000;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -112,14 +92,18 @@ st.markdown("""
 st.markdown('<div class="main-title">🛡️ Detector de Elementos de Protección Personal (PPE) 🛡️</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-title">Desarrollado por: <strong>Ralph Castellanos Couott</strong></div>', unsafe_allow_html=True)
 
-# Cargar el modelo con caché
+# Cargar modelo
 @st.cache_resource
 def load_model():
     try:
+        # Verificar si best.pt existe
+        if not os.path.exists("best.pt"):
+            st.error("❌ No se encuentra el archivo 'best.pt' en el directorio actual")
+            return None
         model = YOLO("best.pt")
         return model
     except Exception as e:
-        st.error(f"Error al cargar el modelo 'best.pt': {e}")
+        st.error(f"Error al cargar el modelo: {e}")
         return None
 
 model = load_model()
@@ -127,7 +111,7 @@ model = load_model()
 if model is None:
     st.stop()
 
-# Diccionario de clases (ajusta según tus clases)
+# Clases PPE (ajusta según tus clases reales)
 PPE_CLASSES = {
     0: "Casco",
     1: "Chaleco",
@@ -139,12 +123,13 @@ PPE_CLASSES = {
 
 # Sidebar con información
 with st.sidebar:
+    st.image("https://img.icons8.com/color/96/000000/hard-hat.png", width=80)
     st.markdown("## ℹ️ Información del Modelo")
     st.info(f"""
     **📊 Detalles técnicos:**
     - Modelo: YOLOv8
     - Clases detectadas: {len(PPE_CLASSES)} elementos
-    - Confianza mínima ajustable
+    - Confianza mínima: 50%
     - Épocas de entrenamiento: 84
     
     **🛡️ Elementos detectables:**
@@ -157,78 +142,75 @@ with st.sidebar:
     """)
     
     st.markdown("---")
-    
-    # Control deslizante para umbral de confianza
-    conf_threshold = st.slider(
-        "🎯 Umbral de confianza", 
-        min_value=0.0, 
-        max_value=1.0, 
-        value=0.5,
-        help="Solo se muestran detecciones con confianza mayor a este valor"
-    )
-    
-    st.markdown("---")
     st.markdown("### 📌 Instrucciones")
     st.markdown("""
     1. Selecciona una opción (Subir imagen o URL)
     2. Carga o ingresa la URL de la imagen
     3. Haz clic en "Analizar imagen"
-    4. Revisa los resultados con bounding boxes
+    4. Revisa los resultados en la tabla
     """)
+    
+    st.markdown("---")
+    st.markdown("### 📊 Estadísticas")
+    st.metric("Confianza mínima", "50%")
+    st.metric("Elementos detectables", len(PPE_CLASSES))
 
 # Función para analizar imagen
-def analyze_image(image, model, conf_threshold):
-    """
-    Analiza la imagen y devuelve detecciones y la imagen con bounding boxes
-    """
-    # Convertir PIL a formato OpenCV (BGR)
+def analyze_image(image, model, confidence_threshold=0.5):
+    # Convertir PIL (RGB) → OpenCV (BGR) para que YOLO trabaje bien
     img_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
-    
+
     # Realizar predicción
-    results = model.predict(source=img_cv, conf=conf_threshold)
-    
-    # Obtener detecciones
+    results = model(img_cv, conf=confidence_threshold)
+
     detections = []
-    boxes = results[0].boxes
-    if len(boxes) > 0:
-        for box in boxes:
-            cls_id = int(box.cls[0])
-            label = model.names[cls_id]
-            prob = float(box.conf[0])
-            
-            if prob >= conf_threshold:
-                detections.append({
-                    "Elemento": label.capitalize(),
-                    "Confianza": f"{prob:.1%}",
-                    "Confianza_valor": prob
-                })
-    
-    # Dibujar resultados y convertir a RGB para Streamlit
-    res_plotted = results[0].plot()  # Esto devuelve imagen en BGR
-    res_rgb = cv2.cvtColor(res_plotted, cv2.COLOR_BGR2RGB)
-    
-    # Eliminar duplicados por elemento (mejor confianza)
+    if len(results) > 0:
+        for r in results:
+            boxes = r.boxes
+            if boxes is not None:
+                for box in boxes:
+                    cls = int(box.cls[0])
+                    conf = float(box.conf[0])
+                    if conf >= confidence_threshold:
+                        detections.append({
+                            "Elemento": PPE_CLASSES.get(cls, f"Clase {cls}"),
+                            "Confianza": f"{conf:.1%}",
+                            "Confianza_valor": conf
+                        })
+
+    # Eliminar duplicados
     unique_detections = {}
     for d in detections:
         if d["Elemento"] not in unique_detections or d["Confianza_valor"] > unique_detections[d["Elemento"]]["Confianza_valor"]:
             unique_detections[d["Elemento"]] = d
-    
-    return list(unique_detections.values()), res_rgb
 
-# Tabs para las opciones
-tab1, tab2 = st.tabs(["📁 Subir imagen", "🔗 URL de imagen"])
+    # ← ESTO ES LO NUEVO: dibujar los cuadros y convertir de vuelta a RGB
+    annotated_image = None
+    if len(results) > 0:
+        res_plotted = results[0].plot()  # Dibuja los bounding boxes (sale en BGR)
+        annotated_image = cv2.cvtColor(res_plotted, cv2.COLOR_BGR2RGB)  # Convertir a RGB para Streamlit
 
-# Variable para almacenar resultados en sesión
+    return list(unique_detections.values()), annotated_image  # ← Ahora devuelve la imagen anotada
+
+# Contenedor principal para las opciones
+st.markdown("## 📋 Selecciona el método de entrada")
+
+# Dos columnas para las opciones
+col1, col2 = st.columns(2)
+
+# Variable para almacenar resultados
 if 'detections' not in st.session_state:
     st.session_state['detections'] = None
-if 'image_analyzed' not in st.session_state:
-    st.session_state['image_analyzed'] = None
 if 'current_image' not in st.session_state:
     st.session_state['current_image'] = None
+if 'image_analyzed' not in st.session_state:
+    st.session_state['image_analyzed'] = None
 
-# Tab 1: Subir archivo
-with tab1:
-    st.markdown("### Sube una imagen desde tu dispositivo")
+# Opción 1: Subir archivo
+with col1:
+    st.markdown('<div class="option-container">', unsafe_allow_html=True)
+    st.markdown("### 📁 Opción 1: Subir imagen")
+    st.markdown("Carga una imagen desde tu dispositivo")
     
     uploaded_file = st.file_uploader(
         "Selecciona una imagen",
@@ -240,18 +222,21 @@ with tab1:
         image = Image.open(uploaded_file)
         st.image(image, caption="Imagen cargada", use_container_width=True)
         
-        if st.button("🔍 Analizar imagen", key="btn_upload", use_container_width=True):
+        if st.button("🔍 Analizar imagen subida", key="btn_upload", use_container_width=True):
             with st.spinner("Analizando imagen... Esto puede tomar unos segundos"):
-                detections, img_analyzed = analyze_image(image, model, conf_threshold)
+                detections, annotated_image = analyze_image(image, model)
                 
                 st.session_state['detections'] = detections
-                st.session_state['image_analyzed'] = img_analyzed
                 st.session_state['current_image'] = image
+                st.session_state['annotated_image'] = annotated_image
                 st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
-# Tab 2: URL
-with tab2:
-    st.markdown("### Ingresa la URL de una imagen")
+# Opción 2: URL
+with col2:
+    st.markdown('<div class="option-container">', unsafe_allow_html=True)
+    st.markdown("### 🔗 Opción 2: URL de imagen")
+    st.markdown("Ingresa la URL de una imagen en línea")
     
     url = st.text_input(
         "URL de la imagen",
@@ -265,18 +250,19 @@ with tab2:
             image = Image.open(BytesIO(response.content))
             st.image(image, caption="Imagen desde URL", use_container_width=True)
             
-            if st.button("🔍 Analizar URL", key="btn_url", use_container_width=True):
+            if st.button("🔍 Analizar imagen desde URL", key="btn_url", use_container_width=True):
                 with st.spinner("Analizando imagen... Esto puede tomar unos segundos"):
-                    detections, img_analyzed = analyze_image(image, model, conf_threshold)
+                    detections, annotated_image = analyze_image(image, model)
                     
                     st.session_state['detections'] = detections
-                    st.session_state['image_analyzed'] = img_analyzed
                     st.session_state['current_image'] = image
+                    st.session_state['annotated_image'] = annotated_image
                     st.rerun()
         except requests.exceptions.Timeout:
-            st.error("⏰ Tiempo de espera agotado. Verifica la URL")
+            st.error("⏰ Tiempo de espera agotado. Verifica la URL o intenta con otra imagen")
         except Exception as e:
-            st.error("❌ Error al cargar la imagen. Verifica que la URL sea válida")
+            st.error(f"❌ Error al cargar la imagen: Verifica que la URL sea válida y accesible")
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # Mostrar resultados
 st.markdown("---")
@@ -284,69 +270,80 @@ st.markdown("## 📊 Resultados del análisis")
 
 if st.session_state['detections'] is not None:
     if len(st.session_state['detections']) > 0:
-        col1, col2 = st.columns([1, 1])
+        # Dos columnas para resultados
+        res_col1, res_col2 = st.columns([1, 1])
         
-        with col1:
+        with res_col1:
             st.markdown('<div class="result-card">', unsafe_allow_html=True)
             st.markdown("### 🖼️ Imagen analizada")
-            if st.session_state.get('image_analyzed') is not None:
-                st.image(st.session_state['image_analyzed'], use_container_width=True)
-                st.caption("🔍 Los recuadros muestran los elementos detectados con su nivel de confianza")
+            if st.session_state.get('annotated_image') is not None:
+                st.image(st.session_state['annotated_image'], use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
         
-        with col2:
+        with res_col2:
             st.markdown('<div class="result-card">', unsafe_allow_html=True)
             st.markdown("### 📋 Elementos PPE detectados")
             
-            # Crear DataFrame para la tabla
-            df = pd.DataFrame([{
-                "🛡️ Elemento": d["Elemento"],
-                "📊 Confianza": d["Confianza"]
-            } for d in st.session_state['detections']])
-            
-            st.dataframe(
-                df,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "🛡️ Elemento": st.column_config.TextColumn("🛡️ Elemento", width="medium"),
-                    "📊 Confianza": st.column_config.TextColumn("📊 Confianza", width="small")
-                }
-            )
-            
-            st.success(f"✅ Se detectaron {len(st.session_state['detections'])} elementos PPE")
-            
-            # Mostrar barras de progreso
-            st.markdown("#### 📈 Niveles de confianza:")
-            for d in st.session_state['detections']:
-                porcentaje = float(d['Confianza'].replace('%', ''))
-                if porcentaje >= 75:
-                    emoji = "🟢"
-                elif porcentaje >= 60:
-                    emoji = "🟡"
-                else:
-                    emoji = "🟠"
+            if st.session_state['detections']:
+                # Crear DataFrame para la tabla
+                df = pd.DataFrame([{
+                    "🛡️ Elemento": d["Elemento"],
+                    "📊 Confianza": d["Confianza"]
+                } for d in st.session_state['detections']])
                 
-                st.markdown(f"**{d['Elemento']}** {emoji}: {d['Confianza']}")
-                st.progress(porcentaje/100)
+                # Mostrar tabla estilizada
+                st.dataframe(
+                    df,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "🛡️ Elemento": st.column_config.TextColumn("🛡️ Elemento", width="medium"),
+                        "📊 Confianza": st.column_config.TextColumn("📊 Confianza", width="small")
+                    }
+                )
+                
+                # Resumen
+                st.success(f"✅ Se detectaron {len(st.session_state['detections'])} elementos PPE")
+                
+                # Mostrar barras de progreso
+                st.markdown("#### 📈 Niveles de confianza:")
+                for d in st.session_state['detections']:
+                    porcentaje = float(d['Confianza'].replace('%', ''))
+                    # Color según nivel de confianza
+                    if porcentaje >= 75:
+                        color = "verde"
+                        emoji = "🟢"
+                    elif porcentaje >= 60:
+                        color = "amarillo"
+                        emoji = "🟡"
+                    else:
+                        color = "naranja"
+                        emoji = "🟠"
+                    
+                    st.markdown(f"**{d['Elemento']}** {emoji}: {d['Confianza']}")
+                    st.progress(porcentaje/100, text=f"Nivel de confianza: {d['Confianza']}")
+                
+                st.markdown("---")
+                st.caption("💡 Los elementos con confianza < 50% no se muestran en los resultados")
+            else:
+                st.warning("⚠️ No se detectaron elementos PPE con confianza ≥ 50%")
             
-            st.markdown("---")
-            st.caption(f"💡 Umbral de confianza actual: {conf_threshold:.0%} - Solo se muestran detecciones que superan este valor")
             st.markdown('</div>', unsafe_allow_html=True)
         
         # Botón para limpiar
         if st.button("🗑️ Limpiar resultados y analizar nueva imagen", use_container_width=True):
             st.session_state['detections'] = None
-            st.session_state['image_analyzed'] = None
             st.session_state['current_image'] = None
+            st.session_state['annotated_image'] = None
             st.rerun()
     
     else:
-        st.warning(f"⚠️ No se detectaron elementos PPE con confianza ≥ {conf_threshold:.0%}")
+        st.warning("⚠️ No se detectaron elementos PPE con confianza ≥ 50% en la imagen analizada")
         
         if st.button("🗑️ Limpiar resultados", use_container_width=True):
             st.session_state['detections'] = None
-            st.session_state['image_analyzed'] = None
+            st.session_state['current_image'] = None
+            st.session_state['annotated_image'] = None
             st.rerun()
 else:
     st.info("👈 Selecciona una imagen (subiendo archivo o ingresando URL) y haz clic en 'Analizar' para comenzar")
@@ -355,7 +352,7 @@ else:
 st.markdown("""
 <div class="footer">
     <hr>
-    <p>🔒 Umbral de confianza ajustable en el sidebar - Solo se muestran detecciones que superan este umbral</p>
+    <p>🔒 Confianza mínima: 50% - Solo se muestran detecciones que superan este umbral</p>
     <p>🎓 Modelo PPE - Ciencia de Datos | Desarrollado por <strong>Ralph Castellanos Couott</strong></p>
     <p>📅 2026 - Detector de Elementos de Protección Personal (PPE) con YOLOv8</p>
 </div>
