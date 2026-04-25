@@ -6,12 +6,13 @@ Desarrollado por **Ralph Castellanos Couott**
 Aplicación web para detección de Elementos de Protección Personal (PPE) usando YOLOv8.
 
 ## 🎯 Elementos detectables
+- Botas de seguridad
+- Protectores auditivos
+- Gafas de seguridad
+- Guantes
 - Casco
+- Persona
 - Chaleco
-- Guantes  
-- Gafas
-- Mascarilla
-- Calzado de seguridad
 
 ## 🚀 Características
 - ✅ Subida de imágenes desde dispositivo
