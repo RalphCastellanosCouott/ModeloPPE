@@ -86,21 +86,18 @@ st.markdown("""
         margin: 1rem 0;
     }
             
-    /* Texto negro en tablas */
-    .stDataFrame, .stDataFrame * {
-        color: #000000 !important;
-    }
-
-    /* Texto negro general en contenedores blancos */
-    .result-card, .result-card * {
-        color: #1a1a1a;
-    }
-
-    /* Texto negro en sidebar */
-    .stSidebar .stMarkdown p, .stSidebar .stMarkdown li {
+    /* Texto negro en la pantalla principal (excluye sidebar y botones) */
+    .main > div, .block-container p, .block-container label,
+    .block-container .stMarkdown, .block-container h1,
+    .block-container h2, .block-container h3 {
         color: #1a1a1a !important;
     }
-        </style>
+
+    /* Texto negro en los option-container */
+    .option-container p, .option-container label,
+    .option-container .stMarkdown, .option-container h3 {
+        color: #1a1a1a !important;
+    }
 """, unsafe_allow_html=True)
 
 # Título
