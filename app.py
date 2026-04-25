@@ -119,6 +119,7 @@ def load_model():
         return None
 
 model = load_model()
+st.write(model.names)
 
 if model is None:
     st.stop()
