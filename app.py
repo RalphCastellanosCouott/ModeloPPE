@@ -92,12 +92,6 @@ st.markdown("""
     .block-container h2, .block-container h3 {
         color: #1a1a1a !important;
     }
-
-    /* Texto negro en los option-container */
-    .option-container p, .option-container label,
-    .option-container .stMarkdown, .option-container h3 {
-        color: #1a1a1a !important;
-    }
 """, unsafe_allow_html=True)
 
 # Título
@@ -119,10 +113,19 @@ def load_model():
         return None
 
 model = load_model()
-st.write(model.names)
 
 if model is None:
     st.stop()
+
+PPE_CLASSES = {
+    0: "Botas de seguridad",
+    1: "Protectores auditivos",
+    2: "Gafas de seguridad",
+    3: "Guantes",
+    4: "Casco",
+    5: "Persona",
+    6: "Chaleco"
+}
 
 # Sidebar con información
 with st.sidebar:
@@ -164,7 +167,7 @@ def analyze_image(image, model, confidence_threshold=0.5):
                     conf = float(box.conf[0])
                     if conf >= confidence_threshold:
                         detections.append({
-                            "Elemento": model.names[cls],
+                            "Elemento": PPE_CLASSES.get(cls, model.names[cls]),
                             "Confianza": f"{conf:.1%}",
                             "Confianza_valor": conf
                         })
