@@ -85,7 +85,22 @@ st.markdown("""
         border-radius: 10px;
         margin: 1rem 0;
     }
-    </style>
+            
+    /* Texto negro en tablas */
+    .stDataFrame, .stDataFrame * {
+        color: #000000 !important;
+    }
+
+    /* Texto negro general en contenedores blancos */
+    .result-card, .result-card * {
+        color: #1a1a1a;
+    }
+
+    /* Texto negro en sidebar */
+    .stSidebar .stMarkdown p, .stSidebar .stMarkdown li {
+        color: #1a1a1a !important;
+    }
+        </style>
 """, unsafe_allow_html=True)
 
 # Título
@@ -111,34 +126,15 @@ model = load_model()
 if model is None:
     st.stop()
 
-# Clases PPE (ajusta según tus clases reales)
-PPE_CLASSES = {
-    0: "Casco",
-    1: "Chaleco",
-    2: "Guantes",
-    3: "Gafas",
-    4: "Mascarilla",
-    5: "Calzado seguridad"
-}
-
 # Sidebar con información
 with st.sidebar:
-    st.image("https://img.icons8.com/color/96/000000/hard-hat.png", width=80)
     st.markdown("## ℹ️ Información del Modelo")
     st.info(f"""
     **📊 Detalles técnicos:**
     - Modelo: YOLOv8
-    - Clases detectadas: {len(PPE_CLASSES)} elementos
+    - Clases detectadas: {len(model.names)} elementos
     - Confianza mínima: 50%
     - Épocas de entrenamiento: 84
-    
-    **🛡️ Elementos detectables:**
-    - 🪖 Casco
-    - 🦺 Chaleco  
-    - 🧤 Guantes
-    - 👓 Gafas
-    - 😷 Mascarilla
-    - 👞 Calzado de seguridad
     """)
     
     st.markdown("---")
@@ -153,15 +149,12 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### 📊 Estadísticas")
     st.metric("Confianza mínima", "50%")
-    st.metric("Elementos detectables", len(PPE_CLASSES))
+    st.metric("Elementos detectables", len(model.names))
 
 # Función para analizar imagen
 def analyze_image(image, model, confidence_threshold=0.5):
-    # Convertir PIL (RGB) → OpenCV (BGR) para que YOLO trabaje bien
-    img_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
-
-    # Realizar predicción
-    results = model(img_cv, conf=confidence_threshold)
+    # ← Pasar la imagen PIL directamente, sin convertir a BGR
+    results = model(image, conf=confidence_threshold)
 
     detections = []
     if len(results) > 0:
@@ -173,24 +166,22 @@ def analyze_image(image, model, confidence_threshold=0.5):
                     conf = float(box.conf[0])
                     if conf >= confidence_threshold:
                         detections.append({
-                            "Elemento": PPE_CLASSES.get(cls, f"Clase {cls}"),
+                            "Elemento": model.names[cls],
                             "Confianza": f"{conf:.1%}",
                             "Confianza_valor": conf
                         })
 
-    # Eliminar duplicados
     unique_detections = {}
     for d in detections:
         if d["Elemento"] not in unique_detections or d["Confianza_valor"] > unique_detections[d["Elemento"]]["Confianza_valor"]:
             unique_detections[d["Elemento"]] = d
 
-    # ← ESTO ES LO NUEVO: dibujar los cuadros y convertir de vuelta a RGB
     annotated_image = None
     if len(results) > 0:
-        res_plotted = results[0].plot()  # Dibuja los bounding boxes (sale en BGR)
-        annotated_image = cv2.cvtColor(res_plotted, cv2.COLOR_BGR2RGB)  # Convertir a RGB para Streamlit
+        res_plotted = results[0].plot()  # Sale en BGR
+        annotated_image = cv2.cvtColor(res_plotted, cv2.COLOR_BGR2RGB)  # ← Convertir a RGB
 
-    return list(unique_detections.values()), annotated_image  # ← Ahora devuelve la imagen anotada
+    return list(unique_detections.values()), annotated_image
 
 # Contenedor principal para las opciones
 st.markdown("## 📋 Selecciona el método de entrada")
